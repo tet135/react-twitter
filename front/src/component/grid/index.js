@@ -1,5 +1,9 @@
 import "./index.css";
 
-export default function Component({ children }) {
-  return <div className="grid">{children}</div>;
+export default function Component({ children, style = {} }) {
+  return (
+    <div className="grid" style={style}>
+      {children}
+    </div>
+  );
 }

@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect, useReducer, useCallback } from "react";
 
 import "./index.css";
 
@@ -10,66 +10,72 @@ import PostCreate from "../post-create";
 import { LOAD_STATUS, Skeleton, Alert } from "../../component/load";
 
 import { getDate } from "../../util/getDate";
+import {
+  REQUEST_ACTION_TYPE,
+  requestInitialState,
+  requestReducer,
+} from "../../util/request";
 
 export default function Container({ id, username, text, date }) {
-  //data - щоб тримати дані з сервера
-  const [data, setData] = useState({
-    id,
-    username,
-    text,
-    date,
-    reply: null,
-  });
-
-  const [status, setStatus] = useState(null);
-  const [message, setMessage] = useState("");
-
-  const getData = async () => {
-    setStatus(LOAD_STATUS.PROGRESS);
+  //3d argument is init - function to set initialState. Туди поклали дані з пропсів як вихідні значення.
+  const [state, dispatch] = useReducer(
+    requestReducer,
+    requestInitialState,
+    (state) => ({ ...state, data: { id, username, text, date, reply: null } })
+  );
+  const getData = useCallback(async () => {
+    dispatch({ type: REQUEST_ACTION_TYPE.PROGRESS });
     try {
       //in GET requests we can ignore method: "GET" and configurative data
-      const res = await fetch(`http://localhost:4000/post-item?id=${data.id}`);
-
+      const res = await fetch(
+        `http://localhost:4000/post-item?id=${state.data.id}`
+      );
       const resData = await res.json();
-
       if (res.ok) {
-        setData(convertData(resData));
-        setStatus(LOAD_STATUS.SUCCESS);
+        dispatch({
+          type: REQUEST_ACTION_TYPE.SUCCESS,
+          payload: convertData(resData),
+        });
       } else {
-        setMessage(resData.message);
-        setStatus(LOAD_STATUS.ERROR);
+        dispatch({ type: REQUEST_ACTION_TYPE.ERROR, payload: resData.message });
       }
     } catch (error) {
-      setMessage(error.message);
-      setStatus(LOAD_STATUS.ERROR);
+      dispatch({ type: REQUEST_ACTION_TYPE.ERROR, payload: error.message });
     }
-  };
+  }, [state.data.id]);
 
   //raw (все, що приходить в data) деструктуризуэться як {post}
-  const convertData = ({ post }) => ({
-    id: post.id,
-    username: post.username,
-    text: post.text,
-    date: getDate(post.date),
+  const convertData = useCallback(
+    ({ post }) => ({
+      id: post.id,
+      username: post.username,
+      text: post.text,
+      date: getDate(post.date),
 
-    reply: post.reply.reverse().map(({ id, username, text, date }) => ({
-      id,
-      username,
-      text,
-      date: getDate(date),
-    })),
+      reply: post.reply.reverse().map(({ id, username, text, date }) => ({
+        id,
+        username,
+        text,
+        date: getDate(date),
+      })),
 
-    isEmpty: post.reply.length === 0,
-  });
+      isEmpty: post.reply.length === 0,
+    }),
+    []
+  );
 
   const [isOpen, setOpen] = useState(false);
 
   const handleOpen = () => {
-    if (status === null) {
-      getData();
-    }
     setOpen(!isOpen);
   };
+
+  useEffect(() => {
+    if (isOpen === true) {
+      // alert(isOpen);
+      getData();
+    }
+  }, [isOpen]);
 
   return (
     <Box style={{ padding: "0" }}>
@@ -81,9 +87,9 @@ export default function Container({ id, username, text, date }) {
         onClick={handleOpen}
       >
         <PostContent
-          username={data.username}
-          date={data.date}
-          text={data.text}
+          username={state.data.username}
+          date={state.data.date}
+          text={state.data.text}
         />
       </div>
 
@@ -94,12 +100,12 @@ export default function Container({ id, username, text, date }) {
               <PostCreate
                 placeholder="Post your reply!"
                 button="Reply"
-                id={data.id}
+                id={state.data.id}
                 onCreate={getData}
               />
             </Box>
 
-            {status === LOAD_STATUS.PROGRESS && (
+            {state.status === LOAD_STATUS.PROGRESS && (
               <Fragment>
                 <Box>
                   <Skeleton />
@@ -110,13 +116,13 @@ export default function Container({ id, username, text, date }) {
               </Fragment>
             )}
 
-            {status === LOAD_STATUS.ERROR && (
-              <Alert message={message} status={status} />
+            {state.status === LOAD_STATUS.ERROR && (
+              <Alert message={state.message} status={state.status} />
             )}
 
-            {status === LOAD_STATUS.SUCCESS &&
-              data.isEmpty === false &&
-              data.reply.map((item) => (
+            {state.status === LOAD_STATUS.SUCCESS &&
+              state.data.isEmpty === false &&
+              state.data.reply.map((item) => (
                 <Fragment key={item.id}>
                   <Box>
                     <PostContent {...item} />
