@@ -1,24 +1,37 @@
-import { useState, Fragment } from "react";
+import "../../style/theme.css";
+import { useTheme } from "../../App";
+
+import {
+  Fragment,
+  useEffect,
+  useReducer,
+  lazy,
+  Suspense,
+  useCallback,
+} from "react";
 
 import Grid from "../../component/grid";
 import Box from "../../component/box";
 import Title from "../../component/title";
-
-import PostItem from "../post-item";
 import PostCreate from "../post-create";
-
 import { Alert, LOAD_STATUS, Skeleton } from "../../component/load";
 
 import { getDate } from "../../util/getDate";
+import {
+  REQUEST_ACTION_TYPE,
+  requestInitialState,
+  requestReducer,
+} from "../../util/request";
+
+import Button from "../../component/button";
+
+const PostItem = lazy(() => import("../post-item"));
 
 export default function Container() {
-  const [status, setStatus] = useState(null);
-  const [message, setMessage] = useState("");
-  //data- щоб тримати дані з сервера
-  const [data, setData] = useState(null);
+  const [state, dispatch] = useReducer(requestReducer, requestInitialState);
 
-  const getData = async () => {
-    setStatus(LOAD_STATUS.PROGRESS);
+  const getData = useCallback(async () => {
+    dispatch({ type: REQUEST_ACTION_TYPE.PROGRESS });
 
     // тут функціонал для отримання списка постів
     try {
@@ -33,17 +46,17 @@ export default function Container() {
       const data = await res.json();
 
       if (res.ok) {
-        setData(convertData(data));
-        setStatus(LOAD_STATUS.SUCCESS);
+        dispatch({
+          type: REQUEST_ACTION_TYPE.SUCCESS,
+          payload: convertData(data),
+        });
       } else {
-        setMessage(data.message);
-        setStatus(LOAD_STATUS.ERROR);
+        dispatch({ type: REQUEST_ACTION_TYPE.ERROR, payload: data.message });
       }
     } catch (error) {
-      setMessage(error.message);
-      setStatus(LOAD_STATUS.ERROR);
+      dispatch({ type: REQUEST_ACTION_TYPE.ERROR, payload: error.message });
     }
-  };
+  }, []);
 
   const convertData = (raw) => ({
     list: raw.list.reverse().map(({ id, username, text, date }) => ({
@@ -55,17 +68,47 @@ export default function Container() {
 
     isEmpty: raw.list.length === 0,
   });
-
-  if (status === null) {
+  //з пустим масивом dependancies запит на сервер відбудеться тільки при першому рендері
+  useEffect(() => {
     getData();
-  }
+    //оновлюємо список постів кожні 5сек.
+    // const intervalId = setInterval(() => getData(), 5000);
+    // //обов'язково видяляємо setInterval до unmounting компонента!!! = cleanup function!
+    // return () => clearInterval(intervalId);
+  }, []);
+
+  const style = {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  };
+
+  const theme = useTheme();
+
+  const handleChangeTheme = () => {
+    theme.setTheme(
+      theme.currentTheme === theme.THEME_TYPE.DARK
+        ? theme.THEME_TYPE.LIGHT
+        : theme.THEME_TYPE.DARK
+    );
+  };
 
   return (
     <Grid>
       {/* //це створення нового поста */}
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          isDisabled={false}
+          text={"Change theme"}
+          handleClick={handleChangeTheme}
+        />
+      </div>
+
       <Box>
         <Grid>
-          <Title>Home</Title>
+          <Grid style={style}>
+            <Title>Welcome to Twitter!</Title>
+          </Grid>
+
           <PostCreate
             //в пропс onCreate кладемо функцію getData, щоб при створенні нового поста
             // одразу оновлювалися дані і оновлювався перелік постів
@@ -77,7 +120,7 @@ export default function Container() {
       </Box>
 
       {/* //тут будуть виводитись пости */}
-      {status === LOAD_STATUS.PROGRESS && (
+      {state.status === LOAD_STATUS.PROGRESS && (
         <Fragment>
           <Box>
             <Skeleton />
@@ -88,19 +131,27 @@ export default function Container() {
         </Fragment>
       )}
 
-      {status === LOAD_STATUS.ERROR && (
-        <Alert status={status} message={message} />
+      {state.status === LOAD_STATUS.ERROR && (
+        <Alert status={state.status} message={state.message} />
       )}
 
-      {status === LOAD_STATUS.SUCCESS && (
+      {state.status === LOAD_STATUS.SUCCESS && (
         <Fragment>
-          {data.isEmpty ? (
+          {state.data.isEmpty ? (
             <Alert message="Список постів порожній" />
           ) : (
-            data.list.map((item) => (
+            state.data.list.map((item) => (
               <Fragment key={item.id}>
                 {/* //item = id, username, text, date */}
-                <PostItem {...item} />
+                <Suspense
+                  fallback={
+                    <Box>
+                      <Skeleton />
+                    </Box>
+                  }
+                >
+                  <PostItem {...item} />
+                </Suspense>
               </Fragment>
             ))
           )}
